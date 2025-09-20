@@ -51,6 +51,15 @@ impl<'se> StringBlock<'se> {
         result
     }
 
+    /// Align string block size to 8 bytes
+    #[inline(always)]
+    pub fn align(&mut self) {
+        while (*self.end & 0b111) != 0 {
+            self.data[*self.end] = 0;
+            *self.end += 1;
+        }
+    }
+
     /// Find a string. If not found, insert it.
     #[inline(always)]
     pub fn find_or_insert(&mut self, name: &str) -> usize {

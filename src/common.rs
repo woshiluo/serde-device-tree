@@ -27,6 +27,13 @@ pub(crate) const FDT_NOP: u32 = 0x4;
 pub(crate) const FDT_END: u32 = 0x9;
 pub(crate) const SUPPORTED_VERSION: u32 = 17;
 
+// In spec 5.6:
+// Specifically, the memory reservation block shall
+// be aligned to an 8-byte boundary and the structure
+// block to a 4-byte boundary.
+pub(crate) const OFFSET_ALIGN: u32 = 64;
+pub(crate) const HEADER_PADDING_LEN: u32 = HEADER_LEN.div_ceil(OFFSET_ALIGN) * OFFSET_ALIGN;
+
 impl Header {
     pub fn verify(&self) -> Result<(), Error> {
         let header_base = self as *const _ as usize;
