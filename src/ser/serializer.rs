@@ -535,7 +535,7 @@ impl<'se> serde::ser::Serializer for Serializer<'_, 'se> {
 #[cfg(test)]
 mod tests {
     use serde::Serialize;
-    const MAX_SIZE: usize = 256 + 32;
+    const MAX_SIZE: usize = 256 + 128;
     #[test]
     fn base_ser_test() {
         #[derive(Serialize)]
