@@ -9,6 +9,25 @@ use crate::ser::patch::Patch;
 // TODO: set reverse map
 const RSVMAP_LEN: usize = 16;
 
+/// Make dtb header with structure block and string block length.
+fn make_header<'se>(writer: &'se mut [u8], structure_length: u32, string_block_length: u32) {
+    let (header, _) = writer.split_at_mut(HEADER_LEN as usize);
+    let header = unsafe { &mut *(header.as_mut_ptr() as *mut Header) };
+    header.magic = u32::from_be(DEVICE_TREE_MAGIC);
+    header.total_size = u32::from_be(
+        HEADER_PADDING_LEN + RSVMAP_LEN as u32 + structure_length + string_block_length,
+    );
+    assert_eq!(header.total_size % 8, 0);
+    header.off_dt_struct = u32::from_be(HEADER_PADDING_LEN + RSVMAP_LEN as u32);
+    header.off_dt_strings = u32::from_be(HEADER_PADDING_LEN + RSVMAP_LEN as u32 + structure_length);
+    header.off_mem_rsvmap = u32::from_be(HEADER_PADDING_LEN);
+    header.version = u32::from_be(SUPPORTED_VERSION);
+    header.last_comp_version = u32::from_be(SUPPORTED_VERSION); // TODO: maybe 16
+    header.boot_cpuid_phys = 0; // TODO
+    header.size_dt_strings = u32::from_be(string_block_length as u32);
+    header.size_dt_struct = u32::from_be(structure_length as u32);
+}
+
 /// Serialize the data to dtb, with a list fof Patch, write to the `writer`.
 ///
 /// We do run-twice on convert, first time to generate string block, second time todo real
@@ -37,16 +56,23 @@ where
         };
         offset
     };
-    list.iter().for_each(|patch| patch.init());
-    // Write from bottom to top, to avoid overlap.
-    for i in (0..string_block_length).rev() {
-        writer[writer.len() - string_block_length + i] = writer[i];
-        writer[i] = 0;
-    }
 
-    let struct_len = {
+    list.iter().for_each(|patch| patch.init());
+    let bottom_string_block_start = writer.len() - string_block_length;
+    // Write to bottom, avoid overlap.
+    unsafe {
+        core::ptr::copy(
+            core::ptr::addr_of!(writer[0]),
+            core::ptr::addr_of_mut!(writer[bottom_string_block_start]),
+            string_block_length,
+        );
+    }
+    writer[0..string_block_length].fill(0);
+
+    let structure_length = {
         let (data_block, string_block) = writer.split_at_mut(writer.len() - string_block_length);
         let (_, data_block) = data_block.split_at_mut(HEADER_PADDING_LEN as usize + RSVMAP_LEN);
+
         let mut patch_list = crate::ser::patch::PatchList::new(list);
         let mut temp_length = string_block_length;
         let mut block = crate::ser::string_block::StringBlock::new(string_block, &mut temp_length);
@@ -60,31 +86,19 @@ where
         struct_len
     };
 
-    // Align to 8-bytes.
-    for i in 0..string_block_length {
-        writer[HEADER_PADDING_LEN as usize + RSVMAP_LEN + struct_len + i] =
-            writer[writer.len() - string_block_length + i];
-        writer[writer.len() - string_block_length + i] = 0;
-    }
-
-    // Make header
-    {
-        let (header, _) = writer.split_at_mut(HEADER_LEN as usize);
-        let header = unsafe { &mut *(header.as_mut_ptr() as *mut Header) };
-        header.magic = u32::from_be(DEVICE_TREE_MAGIC);
-        header.total_size = u32::from_be(
-            HEADER_PADDING_LEN + (RSVMAP_LEN + struct_len + string_block_length) as u32,
+    unsafe {
+        core::ptr::copy(
+            core::ptr::addr_of!(writer[writer.len() - string_block_length]),
+            core::ptr::addr_of_mut!(
+                writer[HEADER_PADDING_LEN as usize + RSVMAP_LEN + structure_length]
+            ),
+            string_block_length,
         );
-        assert_eq!(header.total_size % 8, 0);
-        header.off_dt_struct = u32::from_be(HEADER_PADDING_LEN + RSVMAP_LEN as u32);
-        header.off_dt_strings = u32::from_be(HEADER_PADDING_LEN + (RSVMAP_LEN + struct_len) as u32);
-        header.off_mem_rsvmap = u32::from_be(HEADER_PADDING_LEN);
-        header.version = u32::from_be(SUPPORTED_VERSION);
-        header.last_comp_version = u32::from_be(SUPPORTED_VERSION); // TODO: maybe 16
-        header.boot_cpuid_phys = 0; // TODO
-        header.size_dt_strings = u32::from_be(string_block_length as u32);
-        header.size_dt_struct = u32::from_be(struct_len as u32);
     }
+    writer[bottom_string_block_start..].fill(0);
+
+    make_header(writer, structure_length as u32, string_block_length as u32);
+
     Ok(())
 }
 
