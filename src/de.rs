@@ -518,8 +518,6 @@ mod tests {
     use alloc::format;
     #[cfg(any(feature = "std", feature = "alloc"))]
     use serde::Deserialize;
-    #[cfg(feature = "std")]
-    use std::format;
 
     #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
