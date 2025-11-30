@@ -44,7 +44,8 @@ where
     // 从一个跳过根节点名字的光标初始化解析器。
     let mut d = ValueDeserializer {
         dtb,
-        reg: RegConfig::DEFAULT,
+        self_reg: RegConfig::DEFAULT,
+        next_reg: RegConfig::DEFAULT,
         cursor: ValueCursor::NodeIn(MultiNodeCursor {
             start_cursor: BodyCursor::STARTER,
             skip_cursor: BodyCursor::ROOT, // This item will never be used.

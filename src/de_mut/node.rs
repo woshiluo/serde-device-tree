@@ -7,13 +7,12 @@ use core::marker::PhantomData;
 use serde::de::MapAccess;
 use serde::{Deserialize, Serialize, de};
 
-// TODO: Spec 2.3.5 said that we should not inherited from ancestors and the size-cell &
-// address-cells should only used for current node's children.
 #[allow(unused)]
 #[derive(Clone)]
 pub struct Node<'de> {
     dtb: RefDtb<'de>,
-    reg: RegConfig,
+    self_reg: RegConfig,
+    next_reg: RegConfig,
     cursor: BodyCursor,
     props_start: Option<BodyCursor>,
     nodes_start: Option<BodyCursor>,
@@ -64,7 +63,8 @@ impl<'de> Node<'de> {
         };
         T::deserialize(&mut ValueDeserializer {
             dtb: self.dtb,
-            reg: self.reg,
+            self_reg: self.self_reg,
+            next_reg: self.next_reg,
             cursor: ValueCursor::NodeIn(result),
         })
         .unwrap()
@@ -148,7 +148,7 @@ impl<'de> Iterator for NodeIter<'de, '_> {
                 let node_cursor = c.take_node_on(dtb, name);
                 let res = Some(Self::Item {
                     dtb,
-                    reg: self.node.reg,
+                    reg: self.node.next_reg,
                     node: node_cursor,
                     name,
                 });
@@ -175,7 +175,7 @@ impl<'de> Iterator for PropIter<'de, '_> {
                 let res = Some(Self::Item {
                     dtb,
                     body: *cursor,
-                    reg: self.node.reg,
+                    reg: self.node.self_reg,
                     prop: c,
                     name,
                 });
@@ -212,18 +212,21 @@ impl<'de> Deserialize<'de> for Node<'_> {
                 // While there are entries remaining in the input, add them
                 // into our map.
                 let mut dtb: Option<RefDtb<'b>> = None;
-                let mut reg: Option<RegConfig> = None;
+                // Only update reg when props or init, because node's reg is for children.
+                let mut self_reg: Option<RegConfig> = None;
+                let mut next_reg: Option<RegConfig> = None;
                 let mut props_start: Option<BodyCursor> = None;
                 let mut nodes_start: Option<BodyCursor> = None;
                 let mut self_cursor: Option<BodyCursor> = None;
                 while let Some((key, value)) = access.next_entry::<&str, ValueDeserializer<'b>>()? {
                     dtb = Some(value.dtb);
-                    reg = Some(value.reg);
                     if key == "/" {
+                        self_reg = Some(value.self_reg);
+                        next_reg = Some(value.next_reg);
                         self_cursor = match value.cursor {
                             ValueCursor::NodeIn(result) => Some(result.start_cursor),
                             _ => {
-                                unreachable!("root of NodeSeq shouble be NodeIn cursor")
+                                unreachable!("root of Node shouble be NodeIn cursor")
                             }
                         };
                         continue;
@@ -233,6 +236,8 @@ impl<'de> Deserialize<'de> for Node<'_> {
                             if props_start.is_none() {
                                 props_start = Some(cursor);
                             }
+                            self_reg = Some(value.self_reg);
+                            next_reg = Some(value.next_reg);
                         }
                         ValueCursor::NodeIn(cursor) => {
                             if nodes_start.is_none() {
@@ -245,7 +250,8 @@ impl<'de> Deserialize<'de> for Node<'_> {
 
                 Ok(Node {
                     dtb: dtb.unwrap(),
-                    reg: reg.unwrap(),
+                    self_reg: self_reg.unwrap(),
+                    next_reg: next_reg.unwrap(),
                     cursor: self_cursor.unwrap(),
                     nodes_start,
                     props_start,
@@ -268,7 +274,8 @@ impl<'de> NodeItem<'de> {
     pub fn deserialize<T: Deserialize<'de>>(&self) -> T {
         T::deserialize(&mut ValueDeserializer {
             dtb: self.dtb,
-            reg: self.reg,
+            self_reg: self.reg,
+            next_reg: RegConfig::DEFAULT,
             cursor: ValueCursor::NodeIn(self.node),
         })
         .unwrap()
@@ -304,7 +311,8 @@ impl<'de> PropItem<'de> {
         use super::ValueCursor;
         T::deserialize(&mut ValueDeserializer {
             dtb: self.dtb,
-            reg: self.reg,
+            self_reg: self.reg,
+            next_reg: RegConfig::DEFAULT,
             cursor: ValueCursor::Prop(self.body, self.prop),
         })
         .unwrap()

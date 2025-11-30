@@ -16,7 +16,8 @@ pub(super) enum ValueCursor {
 #[derive(Clone, Copy)]
 pub(super) struct ValueDeserializer<'de> {
     pub dtb: RefDtb<'de>,
-    pub reg: RegConfig,
+    pub self_reg: RegConfig,
+    pub next_reg: RegConfig,
     pub cursor: ValueCursor,
 }
 

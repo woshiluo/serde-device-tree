@@ -1,5 +1,5 @@
 use super::cursor::MultiNodeCursor;
-use super::{BodyCursor, Cursor, PropCursor, ValueCursor, ValueDeserializer};
+use super::{BodyCursor, Cursor, PropCursor, RegConfig, ValueCursor, ValueDeserializer};
 use crate::error::Error as DtError;
 use serde::de;
 
@@ -27,6 +27,7 @@ pub enum Temp {
     Prop(BodyCursor, PropCursor),
 }
 
+// TODO: We should consider about prop after node, even it's no legal.
 impl<'de> de::MapAccess<'de> for StructAccess<'de, '_> {
     type Error = DtError;
 
@@ -92,10 +93,10 @@ impl<'de> de::MapAccess<'de> for StructAccess<'de, '_> {
                     self.de.cursor = ValueCursor::Body(next);
                     match name {
                         "#address-cells" => {
-                            self.de.reg.address_cells = c.map_u32_on(self.de.dtb)? as usize;
+                            self.de.next_reg.address_cells = c.map_u32_on(self.de.dtb)? as usize;
                         }
                         "#size-cells" => {
-                            self.de.reg.size_cells = c.map_u32_on(self.de.dtb)? as usize;
+                            self.de.next_reg.size_cells = c.map_u32_on(self.de.dtb)? as usize;
                         }
                         _ => {}
                     }
@@ -124,7 +125,8 @@ impl<'de> de::MapAccess<'de> for StructAccess<'de, '_> {
                 *flag = true;
                 return seed.deserialize(&mut ValueDeserializer {
                     dtb: self.de.dtb,
-                    reg: self.de.reg,
+                    self_reg: self.de.next_reg,
+                    next_reg: RegConfig::DEFAULT,
                     cursor: self.de.cursor,
                 });
             }
@@ -135,12 +137,14 @@ impl<'de> de::MapAccess<'de> for StructAccess<'de, '_> {
                 match self.access_type {
                     StructAccessType::Map(_) => seed.deserialize(&mut ValueDeserializer {
                         dtb: self.de.dtb,
-                        reg: self.de.reg,
+                        self_reg: self.de.next_reg,
+                        next_reg: RegConfig::DEFAULT,
                         cursor: ValueCursor::NodeIn(*result),
                     }),
                     StructAccessType::Struct(_) => seed.deserialize(&mut ValueDeserializer {
                         dtb: self.de.dtb,
-                        reg: self.de.reg,
+                        self_reg: self.de.next_reg,
+                        next_reg: RegConfig::DEFAULT,
                         cursor: ValueCursor::NodeIn(*result),
                     }),
                     _ => unreachable!(),
@@ -150,7 +154,8 @@ impl<'de> de::MapAccess<'de> for StructAccess<'de, '_> {
                 // 键是属性名字，构造属性反序列化器
                 seed.deserialize(&mut ValueDeserializer {
                     dtb: self.de.dtb,
-                    reg: self.de.reg,
+                    self_reg: self.de.self_reg,
+                    next_reg: self.de.next_reg,
                     cursor: ValueCursor::Prop(origin_cursor, cursor),
                 })
             }
@@ -188,7 +193,8 @@ impl<'de> de::SeqAccess<'de> for StructAccess<'de, '_> {
                     self.de.cursor = ValueCursor::Body(next);
                     seed.deserialize(&mut ValueDeserializer {
                         dtb: self.de.dtb,
-                        reg: self.de.reg,
+                        self_reg: self.de.self_reg,
+                        next_reg: self.de.next_reg,
                         cursor: ValueCursor::Body(prev_cursor),
                     })
                     .map(Some)
