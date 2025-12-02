@@ -1,4 +1,4 @@
-use super::{BodyCursor, Cursor, RefDtb, RegConfig, ValueCursor, ValueDeserializer};
+use super::{Cursor, MultiNodeCursor, RefDtb, RegConfig, ValueCursor, ValueDeserializer};
 use core::{fmt::Debug, marker::PhantomData};
 use serde::de::SeqAccess;
 use serde::{Deserialize, de};
@@ -25,7 +25,7 @@ pub struct NodeSeqIter<'de, 'b> {
 pub struct NodeSeqItem<'de> {
     dtb: RefDtb<'de>,
     reg: RegConfig,
-    body: BodyCursor,
+    body: MultiNodeCursor,
     at: &'de str,
 }
 
@@ -75,13 +75,10 @@ impl<'de> Deserialize<'de> for NodeSeq<'_> {
             }
         }
 
-        serde::Deserializer::deserialize_seq(
-            deserializer,
-            Visitor {
-                marker: PhantomData,
-                lifetime: PhantomData,
-            },
-        )
+        deserializer.deserialize_seq(Visitor {
+            marker: PhantomData,
+            lifetime: PhantomData,
+        })
     }
 }
 
@@ -144,8 +141,8 @@ impl<'de> Iterator for NodeSeqIter<'de, '_> {
 
                     Some(Self::Item {
                         dtb: self.de.dtb,
-                        reg: self.de.reg,
-                        body: node_reuslt.data_cursor,
+                        reg: self.de.self_reg,
+                        body: node_reuslt,
                         at: suf_name,
                     })
                 }
@@ -167,8 +164,9 @@ impl<'de> NodeSeqItem<'de> {
     pub fn deserialize<T: Deserialize<'de>>(&self) -> T {
         T::deserialize(&mut ValueDeserializer {
             dtb: self.dtb,
-            reg: self.reg,
-            cursor: ValueCursor::Body(self.body),
+            self_reg: self.reg,
+            next_reg: RegConfig::DEFAULT,
+            cursor: ValueCursor::NodeIn(self.body),
         })
         .unwrap()
     }
